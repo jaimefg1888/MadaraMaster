@@ -97,7 +97,7 @@ LANG = {
         "preview_type":       "Type",
         "preview_total":      "TOTAL",
         # -- Dashboard --
-        "dash_header":        "🛡️  MADARA MASTER v3.0 | SECURITY DAEMON",
+        "dash_header":        "🛡️  MADARA MASTER v3.1 | SECURITY DAEMON",
         "dash_file":          "📁 File",
         "dash_algorithm":     "🔒 Algorithm",
         "dash_status":        "🔄 Status",
@@ -180,7 +180,7 @@ LANG = {
         "preview_type":       "Tipo",
         "preview_total":      "TOTAL",
         # -- Dashboard --
-        "dash_header":        "🛡️  MADARA MASTER v3.0 | SECURITY DAEMON",
+        "dash_header":        "🛡️  MADARA MASTER v3.1 | SECURITY DAEMON",
         "dash_file":          "📁 Archivo",
         "dash_algorithm":     "🔒 Algoritmo",
         "dash_status":        "🔄 Estado",
@@ -263,7 +263,7 @@ BANNER = """
        ██║ ╚═╝ ██║██║  ██║███████║   ██║   ███████╗██║  ██║
        ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝ 
                                                             
-   MadaraMaster v3.0 • Created by jaimefg1888 • DoD 5220.22-M
+   MadaraMaster v3.1 • Created by jaimefg1888 • DoD 5220.22-M
 """
 
 
