@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Neutron-Wipe — Git Deploy Automation
+MadaraMaster — Git Deploy Automation
 ======================================
 Automates repository initialization and push to GitHub.
 
@@ -26,7 +26,7 @@ def run_cmd(cmd: list, cwd: str = ".") -> bool:
 
 def main():
     print("=" * 60)
-    print("  🧹 Neutron-Wipe — Git Deploy Automation")
+    print("  🧹 MadaraMaster — Git Deploy Automation")
     print("=" * 60)
     print()
 
@@ -87,7 +87,7 @@ def main():
     # Step 4: Commit
     print("[4/6] Creating initial commit...")
     if not run_cmd(
-        ["git", "commit", "-m", "🧹 Initial commit — Neutron-Wipe v1.0.0"],
+        ["git", "commit", "-m", "🧹 Initial commit — MadaraMaster v2.1.0"],
         cwd=project_dir,
     ):
         print("  ℹ If commit failed, files may already be committed.")

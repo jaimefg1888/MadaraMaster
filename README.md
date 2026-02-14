@@ -1,4 +1,4 @@
-# 🧹 Neutron-Wipe
+# 🧹 MadaraMaster
 
 **DoD 5220.22-M Compliant Secure File Sanitization Tool**
 
@@ -72,8 +72,8 @@ Tras tres pases, la firma magnética original es efectivamente destruida. Inclus
 
 ```bash
 # Clone
-git clone https://github.com/your-user/neutron-wipe.git
-cd neutron-wipe
+git clone https://github.com/jaimefg1888/MadaraMaster
+cd madaramaster
 
 # Install dependencies
 pip install -r requirements.txt
@@ -83,30 +83,50 @@ pip install -r requirements.txt
 
 ## Usage
 
+### Interactive Session / Sesión Interactiva (Recommended)
+```bash
+python madara.py
+```
+
+On startup, the tool will ask you to choose a language:
+
+```
+Select Language / Seleccione Idioma [1: EN | 2: ES]:
+```
+
+> Press **1** (or Enter) for English, **2** for Spanish. All prompts, progress labels, and summary messages will appear in your chosen language.
+>
+> Pulse **1** (o Enter) para inglés, **2** para español. Todos los mensajes, etiquetas de progreso y resúmenes se mostrarán en el idioma seleccionado.
+
+💡 Pro Tip: In interactive mode, just drag and drop the file into the terminal window and press Enter.
+
+💡 Consejo Pro: En modo interactivo, simplemente arrastra y suelta el archivo en la terminal y pulsa Enter.
+
+
 ### Wipe a single file / Borrar un archivo
 ```bash
-python main.py wipe secret_document.pdf
+python madara.py wipe secret_document.pdf
 ```
 
 ### Wipe an entire directory / Borrar un directorio completo
 ```bash
-python main.py wipe ./confidential-folder/
+python madara.py wipe ./confidential-folder/
 ```
 
 ### Skip confirmation / Saltar confirmación
 ```bash
-python main.py wipe ./old-data/ --confirm
+python madara.py wipe ./old-data/ --confirm
 ```
 
 ### Dry run — preview only / Solo previsualizar
 ```bash
-python main.py wipe ./sensitive/ --dry-run
+python madara.py wipe ./sensitive/ --dry-run
 ```
 
 ### Show help / Mostrar ayuda
 ```bash
-python main.py --help
-python main.py wipe --help
+python madara.py --help
+python madara.py wipe --help
 ```
 
 ---
@@ -115,17 +135,17 @@ python main.py wipe --help
 
 ```bash
 # Build
-docker build -t neutron-wipe .
+docker build -t madaramaster .
 
 # Wipe files inside /data (mount your directory)
-docker run --rm -it -v /path/to/files:/data neutron-wipe wipe /data --confirm
+docker run --rm -it -v /path/to/files:/data madaramaster wipe /data --confirm
 ```
 
 ---
 
 ## Data Recovery & Irrecoverability
 
-### 🇬🇧 Why Recovery is Impossible After Neutron-Wipe
+### 🇬🇧 Why Recovery is Impossible After MadaraMaster
 
 This section explains **why data sanitized with DoD 5220.22-M is irrecoverable**, even with professional forensic tools.
 
@@ -133,9 +153,9 @@ This section explains **why data sanitized with DoD 5220.22-M is irrecoverable**
 
 When you delete a file normally (pressing Delete, using `rm`, emptying the Recycle Bin), the operating system only removes the **directory entry** — the pointer to the file. The actual data remains physically on the disk platters or flash cells until it is eventually overwritten by new data. This is why tools like **Recuva**, **PhotoRec**, **Autopsy**, and **EnCase** can often recover "deleted" files — the bytes are still there.
 
-#### What Neutron-Wipe Does Differently
+#### What MadaraMaster Does Differently
 
-Neutron-Wipe does NOT simply delete the file pointer. It **physically overwrites every byte of the file's data on disk**, three times:
+MadaraMaster does NOT simply delete the file pointer. It **physically overwrites every byte of the file's data on disk**, three times:
 
 1. **Pass 1 (Zeros):** Every byte of the file is replaced with `0x00`. The original magnetic charge pattern on the disk platter is replaced with a uniform zero field. At this point, the original data is already gone from the storage medium.
 
@@ -143,13 +163,13 @@ Neutron-Wipe does NOT simply delete the file pointer. It **physically overwrites
 
 3. **Pass 3 (Random):** Finally, every byte is overwritten with cryptographically secure random data from `os.urandom()`. This destroys any statistical pattern that might remain, making it impossible to determine what the previous values were, even through electron microscopy.
 
-4. **fsync():** After each pass, Neutron-Wipe calls `os.fsync()` on the file descriptor, forcing the operating system to flush all buffered writes to the physical disk. This guarantees the overwrites reach the actual storage medium and are not sitting in an OS cache.
+4. **fsync():** After each pass, MadaraMaster calls `os.fsync()` on the file descriptor, forcing the operating system to flush all buffered writes to the physical disk. This guarantees the overwrites reach the actual storage medium and are not sitting in an OS cache.
 
 5. **Metadata Scrub:** Before deletion, the file's timestamps are reset to epoch (1970-01-01) and the filename is changed to a random string. This prevents forensic timeline analysis and directory entry recovery.
 
 #### Why Forensic Software Cannot Recover This Data
 
-| Tool | Capability | Against Neutron-Wipe |
+| Tool | Capability | Against MadaraMaster |
 |------|-----------|---------------------|
 | **Recuva** | Recovers files from deleted directory entries | ❌ Data is overwritten, not just unlinked |
 | **PhotoRec** | Carves files by signature from raw disk | ❌ Original signatures destroyed by 3 passes |
@@ -165,9 +185,9 @@ Neutron-Wipe does NOT simply delete the file pointer. It **physically overwrites
 
 Cuando eliminas un archivo normalmente (Papelera, `rm`, Supr), el sistema operativo solo elimina el **puntero** al archivo. Los datos reales permanecen físicamente en el disco hasta que son sobrescritos por datos nuevos. Por eso herramientas como **Recuva**, **PhotoRec** o **Autopsy** pueden recuperar archivos "eliminados".
 
-#### Qué hace Neutron-Wipe de forma diferente
+#### Qué hace MadaraMaster de forma diferente
 
-Neutron-Wipe **sobrescribe físicamente cada byte del archivo** tres veces:
+MadaraMaster **sobrescribe físicamente cada byte del archivo** tres veces:
 
 1. **Pase 1 (Ceros):** Cada byte se reemplaza con `0x00`. El patrón magnético original desaparece.
 2. **Pase 2 (Unos):** Cada byte se reemplaza con `0xFF`. Invierte el dominio magnético, destruyendo trazas residuales.
@@ -175,16 +195,16 @@ Neutron-Wipe **sobrescribe físicamente cada byte del archivo** tres veces:
 4. **fsync():** Tras cada pase se fuerza la escritura física al disco.
 5. **Limpieza de metadatos:** Timestamps reseteados y nombre de archivo aleatorizado.
 
-> **⚠️ ADVERTENCIA CRÍTICA:** Antes de usar Neutron-Wipe, **ASEGÚRATE** de tener copias de seguridad de todo lo que necesites. Una vez ejecutada la herramienta, **NO HAY FORMA** de recuperar los datos. Ni nosotros, ni ningún laboratorio forense, ni ningún software puede deshacer la sobrescritura de tres pases.
+> **⚠️ ADVERTENCIA CRÍTICA:** Antes de usar MadaraMaster, **ASEGÚRATE** de tener copias de seguridad de todo lo que necesites. Una vez ejecutada la herramienta, **NO HAY FORMA** de recuperar los datos. Ni nosotros, ni ningún laboratorio forense, ni ningún software puede deshacer la sobrescritura de tres pases.
 
 ---
 
 ## Project Structure
 
 ```
-neutron-wipe/
+madaramaster/
 ├── wiper.py          # DoD 5220.22-M wipe engine (3-pass, fsync, metadata scrub)
-├── main.py           # Typer CLI + Rich UI (banner, progress, summary)
+├── madara.py         # Typer CLI + Rich UI (banner, progress, interactive session)
 ├── requirements.txt  # Python dependencies
 ├── Dockerfile        # Containerized execution (non-root)
 ├── deploy.py         # Git push automation

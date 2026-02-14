@@ -1,6 +1,6 @@
 Traceback (most recent call last):
   File "C:\Users\jaime\.gemini\antigravity\scratch\neutron-wipe\wiper.py", line 355, in <module>
-    print("\U0001f9f9 Neutron-Wipe ù Engine Self-Test")
+    print("\U0001f9f9 MadaraMaster — Engine Self-Test")
   File "C:\Users\jaime\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
     return codecs.charmap_encode(input,self.errors,encoding_table)[0]
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Neutron-Wipe — DoD 5220.22-M Secure File Sanitization Engine
+MadaraMaster — DoD 5220.22-M Secure File Sanitization Engine
 ==============================================================
 Implements the U.S. Department of Defense 5220.22-M standard for
 secure data destruction on magnetic and solid-state media.
@@ -15,7 +15,7 @@ Anti-forensics:
     - Resets file timestamps (creation, modification, access)
     - Flushes and fsyncs each pass to guarantee physical write to disk
 
-Author : Neutron Security Team
+Author : MadaraMaster Team
 License: MIT — Authorized Data Sanitization Use Only
 """
 
@@ -352,11 +352,11 @@ def collect_files(target: str) -> List[str]:
 if __name__ == "__main__":
     import tempfile
 
-    print("[*] Neutron-Wipe -- Engine Self-Test")
+    print("[*] MadaraMaster -- Engine Self-Test")
     print("=" * 50)
 
     # Create temp test files
-    test_dir = tempfile.mkdtemp(prefix="neutron_test_")
+    test_dir = tempfile.mkdtemp(prefix="madara_test_")
     test_files = []
     for i in range(3):
         fpath = os.path.join(test_dir, f"secret_{i}.txt")
