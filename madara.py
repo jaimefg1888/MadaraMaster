@@ -844,48 +844,84 @@ def _read_all_pasted_input(prompt: str) -> str:
     """
     Reads input that may span multiple pasted lines.
 
-    When users paste multiple file paths (one per line), Python's input()
-    only captures the first line. This function drains any remaining
-    buffered lines and merges them all into a single string so
-    _parse_multi_paths can handle them.
+    On Windows, bypasses Python's input() entirely and reads character-by-
+    character from the console buffer using msvcrt.getwch(). After each
+    Enter key, waits 150ms for more pasted data. Since getwch() and kbhit()
+    both operate on the raw console buffer, this correctly captures all
+    lines from a multi-line paste.
+
+    On non-Windows, falls back to standard input().
     """
-    first_line = input(prompt)
-    all_lines = [first_line]
+    if sys.platform != "win32":
+        return input(prompt)
 
-    # Brief delay so the paste buffer finishes filling
-    time.sleep(0.05)
+    import msvcrt
 
-    if sys.platform == "win32":
-        import msvcrt
-        while msvcrt.kbhit():
-            try:
-                extra = input()
-                if extra.strip():
-                    all_lines.append(extra.strip())
-            except EOFError:
-                break
-            time.sleep(0.05)
-    else:
-        import select
-        while select.select([sys.stdin], [], [], 0.05)[0]:
-            try:
-                extra = sys.stdin.readline().strip()
-                if extra:
-                    all_lines.append(extra)
-            except EOFError:
-                break
+    # Print prompt manually (no newline)
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
 
-    if len(all_lines) == 1:
-        return first_line
+    lines: list[str] = []
+    current: list[str] = []
 
-    # Wrap each line in quotes (if not already) so _parse_multi_paths sees them
+    while True:
+        ch = msvcrt.getwch()
+
+        if ch in ('\r', '\n'):
+            # Enter pressed — save current line
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            lines.append(''.join(current))
+            current = []
+
+            # Wait up to 150ms for more pasted input
+            deadline = time.time() + 0.15
+            got_more = False
+            while time.time() < deadline:
+                if msvcrt.kbhit():
+                    got_more = True
+                    break
+                time.sleep(0.01)
+
+            if not got_more:
+                break  # No more input — user actually pressed Enter
+
+            # More data detected — continue reading the next line
+
+        elif ch == '\x03':  # Ctrl+C
+            raise KeyboardInterrupt
+        elif ch == '\x1a':  # Ctrl+Z
+            raise EOFError
+        elif ch == '\b':    # Backspace
+            if current:
+                current.pop()
+                sys.stdout.write('\b \b')
+                sys.stdout.flush()
+        elif ch in ('\x00', '\xe0'):  # Special key prefix (arrows, F-keys)
+            msvcrt.getwch()  # Consume the second byte and ignore
+        else:
+            current.append(ch)
+            sys.stdout.write(ch)
+            sys.stdout.flush()
+
+    # Handle any trailing partial line
+    remaining = ''.join(current).strip()
+    if remaining:
+        lines.append(remaining)
+
+    # Filter empty lines
+    lines = [l for l in lines if l.strip()]
+
+    if not lines:
+        return ""
+
+    if len(lines) == 1:
+        return lines[0]
+
+    # Multiple lines: wrap each in quotes for _parse_multi_paths
     parts = []
-    for line in all_lines:
-        line = line.strip()
-        if not line:
-            continue
-        # Remove existing surrounding quotes, then re-add clean ones
-        clean = line.strip("'").strip('"').strip()
+    for line in lines:
+        clean = line.strip().strip("'").strip('"').strip()
         if clean:
             parts.append(f'"{clean}"')
 
