@@ -60,6 +60,38 @@ class WipeSummary:
     results: List[WipeResult] = field(default_factory=list)
 
 
+@dataclass
+class WipeTelemetry:
+    """
+    Real-time telemetry snapshot for the Live Dashboard.
+
+    Updated by the progress callback on every chunk write.
+    The UI layer reads this object to render metrics without
+    coupling to the wipe engine internals.
+    """
+    start_time: float = 0.0
+    current_pass: int = 0
+    total_passes: int = DOD_PASSES
+    bytes_written_total: int = 0        # Accumulated across ALL passes
+    bytes_written_current_pass: int = 0  # Reset each pass
+    file_size: int = 0
+    current_file: str = ""
+    finished: bool = False
+
+    @property
+    def total_target_bytes(self) -> int:
+        """Total bytes that must be written (file_size × passes)."""
+        return self.file_size * self.total_passes
+
+    @property
+    def global_progress(self) -> float:
+        """Overall progress 0.0–1.0 across all passes."""
+        target = self.total_target_bytes
+        if target <= 0:
+            return 1.0
+        return min(self.bytes_written_total / target, 1.0)
+
+
 # ──────────────────────── Callbacks ────────────────────────────
 
 # Progress callback signature: (filepath, pass_number, bytes_written, total_bytes)

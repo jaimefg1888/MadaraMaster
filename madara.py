@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-MadaraMaster — CLI Interface
-==============================
+MadaraMaster — CLI Interface v3.0
+===================================
 Professional cyberpunk-themed CLI for secure file sanitization.
-Implements DoD 5220.22-M with real-time progress visualization.
+Implements DoD 5220.22-M with real-time Live Dashboard visualization.
 Bilingual support: English (EN) and Spanish (ES).
 
 Usage:
@@ -19,23 +19,17 @@ License: MIT — Authorized Data Sanitization Use Only
 import os
 import sys
 import time
+import collections
 from typing import Optional
 
 import typer
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    BarColumn,
-    TextColumn,
-    TimeElapsedColumn,
-    TaskProgressColumn,
-    MofNCompleteColumn,
-)
 from rich.table import Table
 from rich.text import Text
 from rich.align import Align
+from rich.live import Live
+from rich.progress_bar import ProgressBar
 from rich import box
 
 from wiper import (
@@ -44,8 +38,10 @@ from wiper import (
     collect_files,
     WipeResult,
     WipeSummary,
+    WipeTelemetry,
     DOD_PASSES,
 )
+from utils import format_bytes
 
 # ──────────────────────── App Setup ────────────────────────────
 
@@ -58,7 +54,7 @@ app = typer.Typer(
 
 console = Console()
 
-VERSION = "2.2.0"
+VERSION = "3.0.0"
 
 # ──────────────────────── i18n — Language System ───────────────
 
@@ -92,6 +88,19 @@ LANG = {
         "confirm_msg":        "Are you sure? [y/N]: ",
         "op_cancelled":       "Operation cancelled.",
         "starting":           "Starting...",
+        # -- Dashboard --
+        "dash_header":        "🛡️  MADARA MASTER v3.0 | SECURITY DAEMON",
+        "dash_file":          "📁 File",
+        "dash_algorithm":     "🔒 Algorithm",
+        "dash_status":        "🔄 Status",
+        "dash_pass_1":        "Pass 1/3 — Overwriting with 0x00 (Zeros)...",
+        "dash_pass_2":        "Pass 2/3 — Overwriting with 0xFF (Ones)...",
+        "dash_pass_3":        "Pass 3/3 — Overwriting with Random Bytes...",
+        "dash_scrubbing":     "🧹 Scrubbing metadata & deleting...",
+        "dash_progress":      "📊 Global Progress",
+        "dash_speed":         "🚀 Speed",
+        "dash_written":       "💾 Effective Write",
+        "dash_file_counter":  "📂 File",
         # -- Summary --
         "summary_title":      "🧹 WIPE SUMMARY",
         "metric":             "Metric",
@@ -108,6 +117,8 @@ LANG = {
         "all_sanitized":      "✔ ALL FILES SANITIZED — DATA IRRECOVERABLE",
         "partial_wipe":       "⚠ PARTIAL WIPE — {wiped} wiped, {failed} failed",
         "no_files_wiped":     "✗ NO FILES WERE WIPED",
+        # -- Completion --
+        "completion_msg":     "[v3.0] SANITIZATION VERIFIED — ZERO RECOVERY",
         # -- Pass labels --
         "pass_1":             "Pass 1/3 · Zeros",
         "pass_2":             "Pass 2/3 · Ones",
@@ -146,6 +157,19 @@ LANG = {
         "confirm_msg":        "¿Estás seguro? [s/N]: ",
         "op_cancelled":       "Operación cancelada.",
         "starting":           "Iniciando...",
+        # -- Dashboard --
+        "dash_header":        "🛡️  MADARA MASTER v3.0 | SECURITY DAEMON",
+        "dash_file":          "📁 Archivo",
+        "dash_algorithm":     "🔒 Algoritmo",
+        "dash_status":        "🔄 Estado",
+        "dash_pass_1":        "Pase 1/3 — Sobrescribiendo con 0x00 (Ceros)...",
+        "dash_pass_2":        "Pase 2/3 — Sobrescribiendo con 0xFF (Unos)...",
+        "dash_pass_3":        "Pase 3/3 — Sobrescribiendo con Bytes Aleatorios...",
+        "dash_scrubbing":     "🧹 Limpiando metadatos y eliminando...",
+        "dash_progress":      "📊 Progreso Global",
+        "dash_speed":         "🚀 Velocidad",
+        "dash_written":       "💾 Escritura Efectiva",
+        "dash_file_counter":  "📂 Archivo",
         # -- Summary --
         "summary_title":      "🧹 RESUMEN DE BORRADO",
         "metric":             "Métrica",
@@ -162,6 +186,8 @@ LANG = {
         "all_sanitized":      "✔ TODOS LOS ARCHIVOS SANITIZADOS — DATOS IRRECUPERABLES",
         "partial_wipe":       "⚠ BORRADO PARCIAL — {wiped} borrados, {failed} fallidos",
         "no_files_wiped":     "✗ NO SE BORRÓ NINGÚN ARCHIVO",
+        # -- Completion --
+        "completion_msg":     "[v3.0] SANITIZACIÓN VERIFICADA — ZERO RECOVERY",
         # -- Pass labels --
         "pass_1":             "Pase 1/3 · Ceros",
         "pass_2":             "Pase 2/3 · Unos",
@@ -192,15 +218,6 @@ def T(key: str, **kwargs) -> str:
     return text.format(**kwargs) if kwargs else text
 
 
-def get_pass_labels() -> dict:
-    """Returns pass labels in the current language."""
-    return {
-        1: (T("pass_1"), "bright_red"),
-        2: (T("pass_2"), "bright_yellow"),
-        3: (T("pass_3"), "bright_green"),
-    }
-
-
 def confirm_action() -> bool:
     """Bilingual confirmation prompt. Accepts y/yes/s/si regardless of language."""
     answer = input(T("confirm_msg")).lower().strip()
@@ -216,14 +233,14 @@ BANNER = """
  ██║╚██╔╝██║██╔══██║██║  ██║██╔══██║██╔══██╗██╔══██║
  ██║ ╚═╝ ██║██║  ██║██████╔╝██║  ██║██║  ██║██║  ██║
  ╚═╝     ╚═╝╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
-      ███╗   ███╗ █████╗ ███████╗████████╗███████╗██████╗ 
-      ████╗ ████║██╔══██╗██╔════╝╚══██╔══╝██╔════╝██╔══██╗
-      ██╔████╔██║███████║███████╗   ██║   █████╗  ██████╔╝
-      ██║╚██╔╝██║██╔══██║╚════██║   ██║   ██╔══╝  ██╔══██╗
-      ██║ ╚═╝ ██║██║  ██║███████║   ██║   ███████╗██║  ██║
-      ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝ 
-                                                           
-   MadaraMaster v2.2 • Created by jaimefg1888 • DoD 5220.22-M
+       ███╗   ███╗ █████╗ ███████╗████████╗███████╗██████╗ 
+       ████╗ ████║██╔══██╗██╔════╝╚══██╔══╝██╔════╝██╔══██╗
+       ██╔████╔██║███████║███████╗   ██║   █████╗  ██████╔╝
+       ██║╚██╔╝██║██╔══██║╚════██║   ██║   ██╔══╝  ██╔══██╗
+       ██║ ╚═╝ ██║██║  ██║███████║   ██║   ███████╗██║  ██║
+       ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝ 
+                                                            
+   MadaraMaster v3.0 • Created by jaimefg1888 • DoD 5220.22-M
 """
 
 
@@ -239,15 +256,6 @@ def print_banner():
             subtitle=f"[dim]DoD 5220.22-M Compliant · v{VERSION}[/]",
         )
     )
-
-
-def format_bytes(b: int) -> str:
-    """Formats bytes into human-readable units."""
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if b < 1024.0:
-            return f"{b:.2f} {unit}"
-        b /= 1024.0
-    return f"{b:.2f} PB"
 
 
 def select_language() -> str:
@@ -364,6 +372,164 @@ def print_summary(summary: WipeSummary):
         )
 
 
+# ──────────────────────── Live Dashboard ───────────────────────
+
+class SpeedTracker:
+    """
+    Calculates write speed using a 2-second moving average window.
+    Avoids jumpy speed readings by smoothing over recent samples.
+    """
+
+    def __init__(self, window_seconds: float = 2.0):
+        self._window = window_seconds
+        self._samples: collections.deque = collections.deque()
+
+    def record(self, bytes_written: int, timestamp: float = None):
+        """Record a cumulative bytes_written sample."""
+        ts = timestamp or time.time()
+        self._samples.append((ts, bytes_written))
+        # Prune old samples outside the window
+        cutoff = ts - self._window
+        while self._samples and self._samples[0][0] < cutoff:
+            self._samples.popleft()
+
+    def get_speed(self) -> float:
+        """Returns bytes/second as a moving average over the window."""
+        if len(self._samples) < 2:
+            return 0.0
+        oldest_ts, oldest_bytes = self._samples[0]
+        newest_ts, newest_bytes = self._samples[-1]
+        dt = newest_ts - oldest_ts
+        if dt <= 0:
+            return 0.0
+        return (newest_bytes - oldest_bytes) / dt
+
+
+def _get_pass_status(pass_number: int) -> str:
+    """Returns the i18n dashboard status string for a given pass."""
+    return T(f"dash_pass_{pass_number}")
+
+
+def _build_dashboard(
+    telemetry: WipeTelemetry,
+    speed_tracker: SpeedTracker,
+    file_index: int,
+    total_files: int,
+) -> Panel:
+    """
+    Constructs the full Live Dashboard layout as a Rich Panel.
+
+    Layout:
+        ┌─ Header ──────────────────────────────────────┐
+        │  🛡️  MADARA MASTER v3.0 | SECURITY DAEMON     │
+        ├─ File Info ────────────────────────────────────┤
+        │  📁 File: ...    🔒 Algorithm: ...   🔄 ...   │
+        ├─ Metrics ──────────────────────────────────────┤
+        │  📊 Progress   🚀 Speed   💾 Written          │
+        └────────────────────────────────────────────────┘
+    """
+    # ── Header ──
+    header = Text(T("dash_header"), style="bold bright_cyan")
+
+    # ── File Info Panel ──
+    basename = os.path.basename(telemetry.current_file) if telemetry.current_file else "—"
+    display_name = basename[:45] + "…" if len(basename) > 45 else basename
+
+    if telemetry.current_pass > 0:
+        status_text = _get_pass_status(telemetry.current_pass)
+    elif telemetry.finished:
+        status_text = T("dash_scrubbing")
+    else:
+        status_text = T("starting")
+
+    info_table = Table(box=None, show_header=False, padding=(0, 2), expand=True)
+    info_table.add_column("Key", style="bold white", ratio=1)
+    info_table.add_column("Value", style="bright_white", ratio=3)
+    info_table.add_row(T("dash_file"), f"[bright_yellow]{display_name}[/]")
+    info_table.add_row(T("dash_algorithm"), "[dim]DoD 5220.22-M (3 Passes)[/]")
+    info_table.add_row(T("dash_status"), f"[bright_cyan]{status_text}[/]")
+
+    if total_files > 1:
+        info_table.add_row(
+            T("dash_file_counter"),
+            f"[bright_magenta]{file_index}/{total_files}[/]"
+        )
+
+    # ── Metrics Grid ──
+    progress_pct = telemetry.global_progress * 100
+    speed = speed_tracker.get_speed()
+    total_target = telemetry.total_target_bytes
+
+    # Build the progress bar
+    bar = ProgressBar(
+        total=100,
+        completed=progress_pct,
+        width=40,
+        complete_style="bright_green" if progress_pct < 100 else "green",
+        finished_style="bold green",
+    )
+
+    metrics_table = Table(box=None, show_header=False, padding=(0, 2), expand=True)
+    metrics_table.add_column("Icon", style="bold", width=22)
+    metrics_table.add_column("Data", ratio=3)
+
+    # Progress row
+    progress_text = Group(
+        bar,
+        Text(f" {progress_pct:.1f}%", style="bold bright_green"),
+    )
+    metrics_table.add_row(T("dash_progress"), progress_text)
+
+    # Speed row
+    speed_str = f"{format_bytes(int(speed))}/s" if speed > 0 else "—"
+    metrics_table.add_row(
+        T("dash_speed"),
+        Text(speed_str, style="bold bright_yellow"),
+    )
+
+    # Written row
+    written_str = (
+        f"{format_bytes(telemetry.bytes_written_total)} / "
+        f"{format_bytes(total_target)}"
+    )
+    metrics_table.add_row(
+        T("dash_written"),
+        Text(written_str, style="bold bright_magenta"),
+    )
+
+    # ── Assemble ──
+    inner = Group(
+        Align.center(header),
+        Text(""),  # spacer
+        Panel(info_table, border_style="dim cyan", box=box.ROUNDED, padding=(0, 1)),
+        Text(""),  # spacer
+        Panel(metrics_table, border_style="dim cyan", box=box.ROUNDED, padding=(0, 1)),
+    )
+
+    return Panel(
+        inner,
+        border_style="bright_cyan",
+        box=box.HEAVY,
+        padding=(1, 2),
+    )
+
+
+def _print_completion_panel():
+    """Renders the final green neon completion panel after Live stops."""
+    console.print()
+    console.print(
+        Panel(
+            Align.center(
+                Text(T("completion_msg"), style="bold bright_green on black"),
+            ),
+            border_style="bright_green",
+            box=box.DOUBLE_EDGE,
+            padding=(1, 4),
+        )
+    )
+    console.print()
+
+
 # ──────────────────────── Commands ─────────────────────────────
 
 @app.command()
@@ -451,75 +617,74 @@ def wipe(
 
     console.print()
 
-    # ── Execute wipe with progress tracking ──
-    pass_labels = get_pass_labels()
+    # ── Execute wipe with Live Dashboard ──
     summary = WipeSummary()
     summary.total_files = len(files)
     start_time = time.time()
 
-    with Progress(
-        SpinnerColumn("dots", style="cyan"),
-        TextColumn("[bold]{task.description}[/]"),
-        BarColumn(
-            bar_width=40,
-            complete_style="bright_green",
-            finished_style="green",
-        ),
-        TaskProgressColumn(),
-        TextColumn("[dim]{task.fields[pass_info]}[/]"),
-        TimeElapsedColumn(),
-        console=console,
-        expand=False,
-    ) as progress:
+    telemetry = WipeTelemetry()
+    speed_tracker = SpeedTracker(window_seconds=2.0)
 
-        for file_idx, filepath in enumerate(files):
-            basename = os.path.basename(filepath)
-            display_name = basename[:30] + "…" if len(basename) > 30 else basename
+    # Accumulated bytes across ALL files for multi-file global tracking
+    global_bytes_written = 0
+
+    with Live(
+        _build_dashboard(telemetry, speed_tracker, 0, len(files)),
+        console=console,
+        refresh_per_second=12,
+        transient=True,
+    ) as live:
+
+        for file_idx, filepath in enumerate(files, start=1):
             file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
 
-            # Total work = file_size * 3 passes
-            total_work = file_size * DOD_PASSES
-            task_id = progress.add_task(
-                f"[{file_idx + 1}/{len(files)}] {display_name}",
-                total=total_work,
-                pass_info=T("starting"),
-            )
+            # Reset telemetry for this file
+            telemetry.start_time = time.time()
+            telemetry.current_pass = 0
+            telemetry.file_size = file_size
+            telemetry.current_file = filepath
+            telemetry.bytes_written_total = 0
+            telemetry.bytes_written_current_pass = 0
+            telemetry.finished = False
 
-            def make_progress_callback(tid):
-                """Creates a closure for progress updates."""
+            speed_tracker = SpeedTracker(window_seconds=2.0)
+
+            def make_callback():
+                """Creates a closure for per-chunk progress updates."""
                 accumulated = {1: 0, 2: 0, 3: 0}
 
                 def callback(fp, pass_num, bytes_done, total_bytes):
                     accumulated[pass_num] = bytes_done
-                    total_done = sum(accumulated.values())
-                    label, color = pass_labels.get(pass_num, ("", "white"))
-                    progress.update(
-                        tid,
-                        completed=total_done,
-                        pass_info=f"[{color}]{label}[/]",
+                    telemetry.current_pass = pass_num
+                    telemetry.bytes_written_current_pass = bytes_done
+                    telemetry.bytes_written_total = sum(accumulated.values())
+
+                    speed_tracker.record(telemetry.bytes_written_total)
+
+                    # Update the live display
+                    live.update(
+                        _build_dashboard(telemetry, speed_tracker, file_idx, len(files))
                     )
 
                 return callback
 
-            result = wipe_file(filepath, progress_callback=make_progress_callback(task_id))
+            result = wipe_file(filepath, progress_callback=make_callback())
             summary.results.append(result)
 
             if result.success:
                 summary.files_wiped += 1
                 summary.total_bytes_overwritten += result.bytes_written
-                progress.update(
-                    task_id,
-                    completed=total_work,
-                    pass_info=f"[bright_green]{T('wiped')}[/]",
+                global_bytes_written += result.bytes_written
+
+                # Final update for this file — mark finished
+                telemetry.finished = True
+                telemetry.bytes_written_total = file_size * DOD_PASSES
+                live.update(
+                    _build_dashboard(telemetry, speed_tracker, file_idx, len(files))
                 )
             else:
                 summary.files_failed += 1
                 summary.errors.append(f"{result.filepath}: {result.error}")
-                progress.update(
-                    task_id,
-                    completed=total_work,
-                    pass_info=f"[bright_red]✗ {result.error[:30]}[/]",
-                )
 
     summary.total_duration = time.time() - start_time
 
@@ -536,7 +701,10 @@ def wipe(
         except OSError:
             pass
 
-    # Show summary
+    # ── Completion: static green neon panel ──
+    _print_completion_panel()
+
+    # Show detailed summary
     print_summary(summary)
 
 
