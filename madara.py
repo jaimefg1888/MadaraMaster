@@ -884,31 +884,38 @@ def interactive_session():
                     break  # Proceed to preview + wipe
                 continue  # Nothing queued yet, just ignore
 
-            # Exit keywords
+            # Exit keywords (check the raw cleaned input)
             if cleaned.lower() in EXIT_KEYWORDS[current_lang]:
                 console.print(f"\n  [bold cyan]{T('session_goodbye')}[/]")
                 return
 
-            # Validate path
-            target = os.path.abspath(cleaned)
-            if not os.path.exists(target):
-                console.print(f"  [bold red]{T('path_not_found')}[/] {target}")
-                continue
+            # Parse paths (handles both single path and multiple quoted paths
+            # e.g. dragging 2 files at once: "path1" "path2")
+            parsed = _parse_multi_paths(raw)
+            if not parsed:
+                # Fallback: treat cleaned input as a single path
+                parsed = [cleaned]
 
-            # Add to queue
-            queued_targets.append(target)
-            basename = os.path.basename(target) or target
-            size = os.path.getsize(target) if os.path.isfile(target) else sum(
-                os.path.getsize(os.path.join(r, f))
-                for r, _, fs in os.walk(target)
-                for f in fs
-                if os.path.exists(os.path.join(r, f))
-            )
-            console.print(
-                f"  [bright_green]✓[/] [bold]{basename}[/] "
-                f"[dim]({format_bytes(size)})[/] — "
-                f"[bright_cyan]{T('queue_count', n=len(queued_targets))}[/]"
-            )
+            for p in parsed:
+                target = os.path.abspath(p.strip())
+                if not os.path.exists(target):
+                    console.print(f"  [bold red]{T('path_not_found')}[/] {target}")
+                    continue
+
+                # Add to queue
+                queued_targets.append(target)
+                basename = os.path.basename(target) or target
+                size = os.path.getsize(target) if os.path.isfile(target) else sum(
+                    os.path.getsize(os.path.join(r, f))
+                    for r, _, fs in os.walk(target)
+                    for f in fs
+                    if os.path.exists(os.path.join(r, f))
+                )
+                console.print(
+                    f"  [bright_green]✓[/] [bold]{basename}[/] "
+                    f"[dim]({format_bytes(size)})[/] — "
+                    f"[bright_cyan]{T('queue_count', n=len(queued_targets))}[/]"
+                )
             console.print(f"  [dim]{T('queue_hint')}[/]")
 
         # ── Preview phase ──
