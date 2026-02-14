@@ -66,7 +66,7 @@ LANG = {
     "EN": {
         # -- Interactive session --
         "session_title":      "Interactive Session Mode",
-        "session_hint":       "n\Enter the path or drag and drop a file or folder, then press Enter.",
+        "session_hint":       "Enter the path or drag and drop a file or folder, then press Enter.",
         "session_exit_hint":  "Type [bold]exit[/bold] or [bold]close[/bold] to quit.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Session ended.",
@@ -120,7 +120,7 @@ LANG = {
     "ES": {
         # -- Interactive session --
         "session_title":      "Modo Sesión Interactiva",
-        "session_hint":       "n\Arrastra un archivo o carpeta y pulsa Enter.",
+        "session_hint":       "Arrastra un archivo o carpeta y pulsa Enter.",
         "session_exit_hint":  "Escribe [bold]salir[/bold] o [bold]cerrar[/bold] para salir.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Sesión terminada.",
@@ -560,7 +560,7 @@ def interactive_session():
     console.print(f"  [bold cyan]{T('session_title')}[/]")
     hint = T('session_hint')
     if hint:
-        console.print(f"  {hint}")
+        console.print(f"\n  {hint}")
     console.print(f"  [dim]{T('session_exit_hint')}[/]\n")
 
     while True:
