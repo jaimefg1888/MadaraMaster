@@ -773,6 +773,13 @@ def interactive_session():
         except SystemExit:
             pass
 
+        # Re-display session hints after wipe completes
+        console.print()
+        hint = T('session_hint')
+        if hint:
+            console.print(f"  {hint}")
+        console.print(f"  [dim]{T('session_exit_hint')}[/]\n")
+
 
 # ──────────────────────── Windows Context Menu ────────────────
 
