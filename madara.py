@@ -62,7 +62,7 @@ LANG = {
     "EN": {
         # -- Interactive session --
         "session_title":      "Interactive Session Mode",
-        "session_hint":       "Enter the path or drag and drop a file or folder, then press Enter.",
+        "session_hint":       "Enter one or more paths (drag and drop files/folders), then press Enter.",
         "session_exit_hint":  "Type [bold]exit[/bold] or [bold]close[/bold] to quit.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Session ended.",
@@ -88,6 +88,12 @@ LANG = {
         "confirm_msg":        "Are you sure? [y/N]: ",
         "op_cancelled":       "Operation cancelled.",
         "starting":           "Starting...",
+        # -- Preview table --
+        "preview_title":      "📋 FILES TO DESTROY",
+        "preview_name":       "Name",
+        "preview_size":       "Size",
+        "preview_type":       "Type",
+        "preview_total":      "TOTAL",
         # -- Dashboard --
         "dash_header":        "🛡️  MADARA MASTER v3.0 | SECURITY DAEMON",
         "dash_file":          "📁 File",
@@ -131,7 +137,7 @@ LANG = {
     "ES": {
         # -- Interactive session --
         "session_title":      "Modo Sesión Interactiva",
-        "session_hint":       "Arrastra un archivo o carpeta y pulsa Enter.",
+        "session_hint":       "Arrastra uno o más archivos/carpetas y pulsa Enter.",
         "session_exit_hint":  "Escribe [bold]salir[/bold] o [bold]cerrar[/bold] para salir.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Sesión terminada.",
@@ -157,6 +163,12 @@ LANG = {
         "confirm_msg":        "¿Estás seguro? [s/N]: ",
         "op_cancelled":       "Operación cancelada.",
         "starting":           "Iniciando...",
+        # -- Preview table --
+        "preview_title":      "📋 ARCHIVOS A DESTRUIR",
+        "preview_name":       "Nombre",
+        "preview_size":       "Tamaño",
+        "preview_type":       "Tipo",
+        "preview_total":      "TOTAL",
         # -- Dashboard --
         "dash_header":        "🛡️  MADARA MASTER v3.0 | SECURITY DAEMON",
         "dash_file":          "📁 Archivo",
@@ -719,17 +731,120 @@ def version():
 
 # ──────────────────────── Interactive Session ──────────────────
 
+def _parse_multi_paths(raw: str) -> list[str]:
+    """
+    Parses a raw input string that may contain one or more paths.
+
+    Handles:
+        - Single path:           C:\\Users\\docs\\secret.txt
+        - Quoted path:           "C:\\Users\\My Docs\\file.txt"
+        - Multiple drag-n-drop:  "C:\\a.txt" "C:\\b.txt" "C:\\c.txt"
+        - Mixed:                 C:\\a.txt "C:\\My Dir\\b.txt"
+    """
+    paths: list[str] = []
+    i = 0
+    raw = raw.strip()
+
+    while i < len(raw):
+        # Skip whitespace between paths
+        if raw[i] in (' ', '\t'):
+            i += 1
+            continue
+
+        # Quoted path
+        if raw[i] == '"':
+            end = raw.find('"', i + 1)
+            if end == -1:
+                # Unterminated quote — take rest as path
+                paths.append(raw[i + 1:].strip())
+                break
+            paths.append(raw[i + 1:end])
+            i = end + 1
+        elif raw[i] == "'":
+            end = raw.find("'", i + 1)
+            if end == -1:
+                paths.append(raw[i + 1:].strip())
+                break
+            paths.append(raw[i + 1:end])
+            i = end + 1
+        else:
+            # Unquoted path — runs until next space (unless it looks like a drive letter path)
+            # On Windows, paths with spaces won't work unquoted with multi-file, but single file is fine
+            end = i
+            while end < len(raw) and raw[end] not in ('"', "'"):
+                end += 1
+            paths.append(raw[i:end].strip())
+            i = end
+
+    # Filter empty strings
+    return [p for p in paths if p]
+
+
+def _print_file_preview(targets: list[str]):
+    """Displays a rich preview table of the files about to be wiped."""
+    table = Table(
+        title=f"[bold bright_cyan]{T('preview_title')}[/]",
+        box=box.ROUNDED,
+        border_style="bright_cyan",
+        padding=(0, 1),
+        show_lines=True,
+    )
+    table.add_column("#", style="dim", width=4, justify="right")
+    table.add_column(T("preview_name"), style="bold white", ratio=3)
+    table.add_column(T("preview_size"), style="bright_yellow", justify="right", min_width=12)
+    table.add_column(T("preview_type"), style="dim cyan", min_width=10)
+
+    total_size = 0
+    for idx, target in enumerate(targets, start=1):
+        name = os.path.basename(target) or target
+        if os.path.isdir(target):
+            # Count files inside
+            file_count = sum(len(files) for _, _, files in os.walk(target))
+            size = sum(
+                os.path.getsize(os.path.join(r, f))
+                for r, _, fs in os.walk(target)
+                for f in fs
+                if os.path.exists(os.path.join(r, f))
+            )
+            type_str = f"📁 {T('type_dir')}"
+            name_str = f"{name}/ [dim]({file_count} files)[/]"
+        else:
+            size = os.path.getsize(target) if os.path.exists(target) else 0
+            type_str = f"📄 {T('type_file')}"
+            name_str = name
+
+        total_size += size
+        table.add_row(str(idx), name_str, format_bytes(size), type_str)
+
+    # Footer row with total
+    table.add_row(
+        "",
+        f"[bold]{T('preview_total')}[/]",
+        f"[bold bright_green]{format_bytes(total_size)}[/]",
+        "",
+    )
+
+    console.print()
+    console.print(table)
+    console.print()
+
+
+def _print_session_hints():
+    """Prints the session drag-and-drop and exit hints."""
+    hint = T('session_hint')
+    if hint:
+        console.print(f"  {hint}")
+    console.print(f"  [dim]{T('session_exit_hint')}[/]\n")
+
+
 def interactive_session():
     """
     Interactive session mode: infinite loop for drag-and-drop file wiping.
-    Invoked when the script runs without arguments.
+    Supports multiple files at once. Invoked when the script runs without arguments.
     """
     print_banner()
-    console.print(f"  [bold cyan]{T('session_title')}[/]")
-    hint = T('session_hint')
-    if hint:
-        console.print(f"\n  {hint}")
-    console.print(f"  [dim]{T('session_exit_hint')}[/]\n")
+    console.print(f"  [bold cyan]{T('session_title')}[/]\n")
+    _print_session_hints()
 
     while True:
         try:
@@ -738,47 +853,60 @@ def interactive_session():
             console.print(f"\n  [bold cyan]{T('session_ended')}[/]")
             break
 
-        # Detect --force flag BEFORE stripping quotes (preserves paths with spaces)
+        # Detect --force flag BEFORE parsing paths
         skip_confirm = False
         if raw_input.rstrip().endswith("--force"):
             raw_input = raw_input.rstrip()[:-len("--force")]
             skip_confirm = True
 
-        # Input sanitization: strip whitespace + remove surrounding quotes
-        cleaned = raw_input.strip().strip("'").strip('"').strip()
-
-        if not cleaned:
+        # Check for exit first (before multi-path parsing)
+        stripped = raw_input.strip().strip("'").strip('"').strip()
+        if not stripped:
             continue
 
-        if cleaned.lower() in EXIT_KEYWORDS[current_lang]:
+        if stripped.lower() in EXIT_KEYWORDS[current_lang]:
             console.print(f"\n  [bold cyan]{T('session_goodbye')}[/]")
             break
 
-        # Validate path exists
-        target = os.path.abspath(cleaned)
-        if not os.path.exists(target):
-            console.print(f"  [bold red]{T('path_not_found')}[/] {target}")
+        # Parse multiple paths from input
+        parsed_paths = _parse_multi_paths(raw_input)
+        if not parsed_paths:
             continue
+
+        # Resolve and validate all paths
+        valid_targets: list[str] = []
+        for p in parsed_paths:
+            target = os.path.abspath(p.strip())
+            if os.path.exists(target):
+                valid_targets.append(target)
+            else:
+                console.print(f"  [bold red]{T('path_not_found')}[/] {target}")
+
+        if not valid_targets:
+            continue
+
+        # Show preview table of all targets
+        _print_file_preview(valid_targets)
 
         # Confirmation (unless --force turbo mode)
         if not skip_confirm:
             if not confirm_action():
                 console.print(f"  [bold cyan]{T('op_cancelled')}[/]")
+                console.print()
+                _print_session_hints()
                 continue
 
-        # Invoke the wipe command via sys.argv (--confirm skips Typer's own prompt)
-        sys.argv = ["madara.py", "wipe", target, "--confirm"]
-        try:
-            app(standalone_mode=False)
-        except SystemExit:
-            pass
+        # Wipe each target
+        for target in valid_targets:
+            sys.argv = ["madara.py", "wipe", target, "--confirm"]
+            try:
+                app(standalone_mode=False)
+            except SystemExit:
+                pass
 
         # Re-display session hints after wipe completes
         console.print()
-        hint = T('session_hint')
-        if hint:
-            console.print(f"  {hint}")
-        console.print(f"  [dim]{T('session_exit_hint')}[/]\n")
+        _print_session_hints()
 
 
 # ──────────────────────── Windows Context Menu ────────────────
