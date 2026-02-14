@@ -840,6 +840,58 @@ def _print_session_hints():
     console.print(f"  [dim]{T('session_exit_hint')}[/]\n")
 
 
+def _read_all_pasted_input(prompt: str) -> str:
+    """
+    Reads input that may span multiple pasted lines.
+
+    When users paste multiple file paths (one per line), Python's input()
+    only captures the first line. This function drains any remaining
+    buffered lines and merges them all into a single string so
+    _parse_multi_paths can handle them.
+    """
+    first_line = input(prompt)
+    all_lines = [first_line]
+
+    # Brief delay so the paste buffer finishes filling
+    time.sleep(0.05)
+
+    if sys.platform == "win32":
+        import msvcrt
+        while msvcrt.kbhit():
+            try:
+                extra = input()
+                if extra.strip():
+                    all_lines.append(extra.strip())
+            except EOFError:
+                break
+            time.sleep(0.05)
+    else:
+        import select
+        while select.select([sys.stdin], [], [], 0.05)[0]:
+            try:
+                extra = sys.stdin.readline().strip()
+                if extra:
+                    all_lines.append(extra)
+            except EOFError:
+                break
+
+    if len(all_lines) == 1:
+        return first_line
+
+    # Wrap each line in quotes (if not already) so _parse_multi_paths sees them
+    parts = []
+    for line in all_lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Remove existing surrounding quotes, then re-add clean ones
+        clean = line.strip("'").strip('"').strip()
+        if clean:
+            parts.append(f'"{clean}"')
+
+    return " ".join(parts)
+
+
 def interactive_session():
     """
     Interactive session mode: infinite loop for drag-and-drop file wiping.
@@ -851,7 +903,7 @@ def interactive_session():
 
     while True:
         try:
-            raw_input = input(T("session_prompt"))
+            raw_input = _read_all_pasted_input(T("session_prompt"))
         except (EOFError, KeyboardInterrupt):
             console.print(f"\n  [bold cyan]{T('session_ended')}[/]")
             break
