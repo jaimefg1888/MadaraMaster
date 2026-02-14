@@ -120,7 +120,8 @@ LANG = {
         "avg_speed":          "Average Write Speed",
         "errors_title":       "⚠ Errors",
         "more_errors":        "...and {n} more",
-        "all_sanitized":      "✔ ALL FILES SANITIZED — DATA IRRECOVERABLE",
+        "all_sanitized_one":  "✔ {n} FILE DELETED — DATA IRRECOVERABLE",
+        "all_sanitized_many": "✔ {n} FILES DELETED — DATA IRRECOVERABLE",
         "partial_wipe":       "⚠ PARTIAL WIPE — {wiped} wiped, {failed} failed",
         "no_files_wiped":     "✗ NO FILES WERE WIPED",
         # -- Completion --
@@ -195,7 +196,8 @@ LANG = {
         "avg_speed":          "Velocidad Media de Escritura",
         "errors_title":       "⚠ Errores",
         "more_errors":        "...y {n} más",
-        "all_sanitized":      "✔ TODOS LOS ARCHIVOS SANITIZADOS — DATOS IRRECUPERABLES",
+        "all_sanitized_one":  "✔ {n} ARCHIVO ELIMINADO — DATOS IRRECUPERABLES",
+        "all_sanitized_many": "✔ {n} ARCHIVOS ELIMINADOS — DATOS IRRECUPERABLES",
         "partial_wipe":       "⚠ BORRADO PARCIAL — {wiped} borrados, {failed} fallidos",
         "no_files_wiped":     "✗ NO SE BORRÓ NINGÚN ARCHIVO",
         # -- Completion --
@@ -347,10 +349,11 @@ def print_summary(summary: WipeSummary):
     # Final status
     console.print()
     if summary.files_failed == 0 and summary.files_wiped > 0:
+        key = "all_sanitized_one" if summary.files_wiped == 1 else "all_sanitized_many"
         console.print(
             Panel(
                 Align.center(
-                    Text(T("all_sanitized"), style="bold bright_green"),
+                    Text(T(key, n=summary.files_wiped), style="bold bright_green"),
                 ),
                 border_style="bright_green",
                 box=box.DOUBLE_EDGE,
