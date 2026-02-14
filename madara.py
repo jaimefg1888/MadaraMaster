@@ -62,8 +62,10 @@ LANG = {
     "EN": {
         # -- Interactive session --
         "session_title":      "Interactive Session Mode",
-        "session_hint":       "Drag or type the path of one or more files/folders and press Enter.",
+        "session_hint":       "Drag or type file/folder paths one at a time. Press Enter on empty line to wipe.",
         "session_exit_hint":  "Type [bold]exit[/bold] or [bold]close[/bold] to quit.",
+        "queue_count":        "{n} file(s) queued",
+        "queue_hint":         "Add more or press Enter to proceed.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Session ended.",
         "session_goodbye":    "👋 Session ended. See you later.",
@@ -138,8 +140,10 @@ LANG = {
     "ES": {
         # -- Interactive session --
         "session_title":      "Modo Sesión Interactiva",
-        "session_hint":       "Arrastra o escribe la ruta de uno o más archivos/carpetas y pulsa Enter.",
+        "session_hint":       "Arrastra o escribe rutas de archivos/carpetas una a una. Pulsa Enter en vacío para borrar.",
         "session_exit_hint":  "Escribe [bold]salir[/bold] o [bold]cerrar[/bold] para salir.",
+        "queue_count":        "{n} archivo(s) en cola",
+        "queue_hint":         "Añade más o pulsa Enter para continuar.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Sesión terminada.",
         "session_goodbye":    "👋 Sesión terminada. Hasta pronto.",
@@ -840,146 +844,77 @@ def _print_session_hints():
     console.print(f"  [dim]{T('session_exit_hint')}[/]\n")
 
 
-def _read_all_pasted_input(prompt: str) -> str:
-    """
-    Reads input that may span multiple pasted lines.
-
-    On Windows, bypasses Python's input() entirely and reads character-by-
-    character from the console buffer using msvcrt.getwch(). After each
-    Enter key, waits 150ms for more pasted data. Since getwch() and kbhit()
-    both operate on the raw console buffer, this correctly captures all
-    lines from a multi-line paste.
-
-    On non-Windows, falls back to standard input().
-    """
-    if sys.platform != "win32":
-        return input(prompt)
-
-    import msvcrt
-
-    # Print prompt manually (no newline)
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
-
-    lines: list[str] = []
-    current: list[str] = []
-
-    while True:
-        ch = msvcrt.getwch()
-
-        if ch in ('\r', '\n'):
-            # Enter pressed — save current line
-            sys.stdout.write('\n')
-            sys.stdout.flush()
-            lines.append(''.join(current))
-            current = []
-
-            # Wait up to 150ms for more pasted input
-            deadline = time.time() + 0.15
-            got_more = False
-            while time.time() < deadline:
-                if msvcrt.kbhit():
-                    got_more = True
-                    break
-                time.sleep(0.01)
-
-            if not got_more:
-                break  # No more input — user actually pressed Enter
-
-            # More data detected — continue reading the next line
-
-        elif ch == '\x03':  # Ctrl+C
-            raise KeyboardInterrupt
-        elif ch == '\x1a':  # Ctrl+Z
-            raise EOFError
-        elif ch == '\b':    # Backspace
-            if current:
-                current.pop()
-                sys.stdout.write('\b \b')
-                sys.stdout.flush()
-        elif ch in ('\x00', '\xe0'):  # Special key prefix (arrows, F-keys)
-            msvcrt.getwch()  # Consume the second byte and ignore
-        else:
-            current.append(ch)
-            sys.stdout.write(ch)
-            sys.stdout.flush()
-
-    # Handle any trailing partial line
-    remaining = ''.join(current).strip()
-    if remaining:
-        lines.append(remaining)
-
-    # Filter empty lines
-    lines = [l for l in lines if l.strip()]
-
-    if not lines:
-        return ""
-
-    if len(lines) == 1:
-        return lines[0]
-
-    # Multiple lines: wrap each in quotes for _parse_multi_paths
-    parts = []
-    for line in lines:
-        clean = line.strip().strip("'").strip('"').strip()
-        if clean:
-            parts.append(f'"{clean}"')
-
-    return " ".join(parts)
-
-
 def interactive_session():
     """
-    Interactive session mode: infinite loop for drag-and-drop file wiping.
-    Supports multiple files at once. Invoked when the script runs without arguments.
+    Interactive session mode with multi-file accumulation.
+
+    Flow:
+        1. User drags/types paths one at a time → each is validated and added
+        2. A running counter shows how many files are queued
+        3. User presses Enter on empty line → preview table + confirm + wipe
+        4. Exit keywords work at any point
     """
     print_banner()
     console.print(f"  [bold cyan]{T('session_title')}[/]\n")
     _print_session_hints()
 
     while True:
-        try:
-            raw_input = _read_all_pasted_input(T("session_prompt"))
-        except (EOFError, KeyboardInterrupt):
-            console.print(f"\n  [bold cyan]{T('session_ended')}[/]")
-            break
+        # ── Accumulation phase: collect paths ──
+        queued_targets: list[str] = []
 
-        # Detect --force flag BEFORE parsing paths
-        skip_confirm = False
-        if raw_input.rstrip().endswith("--force"):
-            raw_input = raw_input.rstrip()[:-len("--force")]
-            skip_confirm = True
+        while True:
+            try:
+                raw = input(T("session_prompt"))
+            except (EOFError, KeyboardInterrupt):
+                console.print(f"\n  [bold cyan]{T('session_ended')}[/]")
+                return
 
-        # Check for exit first (before multi-path parsing)
-        stripped = raw_input.strip().strip("'").strip('"').strip()
-        if not stripped:
-            continue
+            # Detect --force flag
+            skip_confirm = False
+            if raw.rstrip().endswith("--force"):
+                raw = raw.rstrip()[:-len("--force")]
+                skip_confirm = True
 
-        if stripped.lower() in EXIT_KEYWORDS[current_lang]:
-            console.print(f"\n  [bold cyan]{T('session_goodbye')}[/]")
-            break
+            # Sanitize
+            cleaned = raw.strip().strip("'").strip('"').strip()
 
-        # Parse multiple paths from input
-        parsed_paths = _parse_multi_paths(raw_input)
-        if not parsed_paths:
-            continue
+            # Empty input = move to wipe phase (if we have files)
+            if not cleaned:
+                if queued_targets:
+                    break  # Proceed to preview + wipe
+                continue  # Nothing queued yet, just ignore
 
-        # Resolve and validate all paths
-        valid_targets: list[str] = []
-        for p in parsed_paths:
-            target = os.path.abspath(p.strip())
-            if os.path.exists(target):
-                valid_targets.append(target)
-            else:
+            # Exit keywords
+            if cleaned.lower() in EXIT_KEYWORDS[current_lang]:
+                console.print(f"\n  [bold cyan]{T('session_goodbye')}[/]")
+                return
+
+            # Validate path
+            target = os.path.abspath(cleaned)
+            if not os.path.exists(target):
                 console.print(f"  [bold red]{T('path_not_found')}[/] {target}")
+                continue
 
-        if not valid_targets:
-            continue
+            # Add to queue
+            queued_targets.append(target)
+            basename = os.path.basename(target) or target
+            size = os.path.getsize(target) if os.path.isfile(target) else sum(
+                os.path.getsize(os.path.join(r, f))
+                for r, _, fs in os.walk(target)
+                for f in fs
+                if os.path.exists(os.path.join(r, f))
+            )
+            console.print(
+                f"  [bright_green]✓[/] [bold]{basename}[/] "
+                f"[dim]({format_bytes(size)})[/] — "
+                f"[bright_cyan]{T('queue_count', n=len(queued_targets))}[/]"
+            )
+            console.print(f"  [dim]{T('queue_hint')}[/]")
 
-        # Show preview table of all targets
-        _print_file_preview(valid_targets)
+        # ── Preview phase ──
+        _print_file_preview(queued_targets)
 
-        # Confirmation (unless --force turbo mode)
+        # ── Confirmation ──
         if not skip_confirm:
             if not confirm_action():
                 console.print(f"  [bold cyan]{T('op_cancelled')}[/]")
@@ -987,8 +922,8 @@ def interactive_session():
                 _print_session_hints()
                 continue
 
-        # Wipe each target
-        for target in valid_targets:
+        # ── Wipe phase ──
+        for target in queued_targets:
             sys.argv = ["madara.py", "wipe", target, "--confirm"]
             try:
                 app(standalone_mode=False)
