@@ -866,6 +866,10 @@ def interactive_session():
             try:
                 raw = input(T("session_prompt"))
             except (EOFError, KeyboardInterrupt):
+                # If we have queued targets, treat EOF/Interrupt as "done adding"
+                # so we proceed to wipe them. If queue is empty, exit.
+                if queued_targets:
+                    break
                 console.print(f"\n  [bold cyan]{T('session_ended')}[/]")
                 return
 
