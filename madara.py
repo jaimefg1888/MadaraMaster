@@ -62,7 +62,7 @@ LANG = {
     "EN": {
         # -- Interactive session --
         "session_title":      "Interactive Session Mode",
-        "session_hint":       "Enter one or more paths (drag and drop files/folders), then press Enter.",
+        "session_hint":       "Drag or type the path of one or more files/folders and press Enter.",
         "session_exit_hint":  "Type [bold]exit[/bold] or [bold]close[/bold] to quit.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Session ended.",
@@ -138,7 +138,7 @@ LANG = {
     "ES": {
         # -- Interactive session --
         "session_title":      "Modo Sesión Interactiva",
-        "session_hint":       "Arrastra uno o más archivos/carpetas y pulsa Enter.",
+        "session_hint":       "Arrastra o escribe la ruta de uno o más archivos/carpetas y pulsa Enter.",
         "session_exit_hint":  "Escribe [bold]salir[/bold] o [bold]cerrar[/bold] para salir.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Sesión terminada.",
