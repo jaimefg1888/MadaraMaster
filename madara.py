@@ -54,7 +54,7 @@ app = typer.Typer(
 
 console = Console()
 
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 
 # ──────────────────────── i18n — Language System ───────────────
 
@@ -127,9 +127,14 @@ LANG = {
         "partial_wipe":       "⚠ PARTIAL WIPE — {wiped} wiped, {failed} failed",
         "no_files_wiped":     "✗ NO FILES WERE WIPED",
         # -- Completion --
-        "completion_msg":     "[v3.0] SANITIZATION VERIFIED — ZERO RECOVERY",
+        "completion_msg":     "[v3.1] SANITIZATION VERIFIED — ZERO RECOVERY",
         # -- Pass labels --
         "pass_1":             "Pass 1/3 · Zeros",
+        "pass_2":             "Pass 2/3 · Ones",
+        "pass_3":             "Pass 3/3 · Random",
+        "pass_random":        "Random Overwrite",
+        # -- Summary --
+        "summary_title":      "🧹 WIPE SUMMARY",
         "pass_2":             "Pass 2/3 · Ones",
         "pass_3":             "Pass 3/3 · Random",
         "wiped":              "✔ Wiped",
@@ -205,7 +210,7 @@ LANG = {
         "partial_wipe":       "⚠ BORRADO PARCIAL — {wiped} borrados, {failed} fallidos",
         "no_files_wiped":     "✗ NO SE BORRÓ NINGÚN ARCHIVO",
         # -- Completion --
-        "completion_msg":     "[v3.0] SANITIZACIÓN VERIFICADA — ZERO RECOVERY",
+        "completion_msg":     "[v3.1] SANITIZACIÓN VERIFICADA — ZERO RECOVERY",
         # -- Pass labels --
         "pass_1":             "Pase 1/3 · Ceros",
         "pass_2":             "Pase 2/3 · Unos",
