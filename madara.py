@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MadaraMaster — CLI Interface v3.0
+MadaraMaster — CLI Interface v4.0
 ===================================
 Professional cyberpunk-themed CLI for secure file sanitization.
 Implements DoD 5220.22-M with real-time Live Dashboard visualization.
@@ -185,7 +185,7 @@ LANG = {
         "preview_type":       "Tipo",
         "preview_total":      "TOTAL",
         # -- Dashboard --
-        "dash_header":        "🛡️  MADARA MASTER v3.0.0 | SECURITY DAEMON",
+        "dash_header":        "🛡️  MADARA MASTER v4.0.0 | SECURITY DAEMON",
         "dash_file":          "📁 Archivo",
         "dash_algorithm":     "🔒 Algoritmo",
         "dash_status":        "🔄 Estado",
@@ -215,7 +215,7 @@ LANG = {
         "partial_wipe":       "⚠ BORRADO PARCIAL — {wiped} borrados, {failed} fallidos",
         "no_files_wiped":     "✗ NO SE BORRÓ NINGÚN ARCHIVO",
         # -- Completion --
-        "completion_msg":     "[v3.0.0] SANITIZACIÓN VERIFICADA — ZERO RECOVERY",
+        "completion_msg":     "[v4.0.0] SANITIZACIÓN VERIFICADA — ZERO RECOVERY",
         # -- Pass labels --
         "pass_1":             "Pase 1/3 · Ceros",
         "pass_2":             "Pase 2/3 · Unos",
@@ -268,7 +268,7 @@ BANNER = """
        ██║ ╚═╝ ██║██║  ██║███████║   ██║   ███████╗██║  ██║
        ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝ 
                                                             
-   MadaraMaster v3.0.0 • Created by jaimefg1888 • DoD 5220.22-M
+   MadaraMaster v4.0.0 • Created by jaimefg1888 • DoD 5220.22-M
 """
 
 
@@ -450,7 +450,7 @@ def _build_dashboard(
 
     Layout:
         ┌─ Header ──────────────────────────────────────┐
-        │  🛡️  MADARA MASTER v3.0 | SECURITY DAEMON     │
+        │  🛡️  MADARA MASTER v4.0 | SECURITY DAEMON     │
         ├─ File Info ────────────────────────────────────┤
         │  📁 File: ...    🔒 Algorithm: ...   🔄 ...   │
         ├─ Metrics ──────────────────────────────────────┤
