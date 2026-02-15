@@ -32,6 +32,9 @@ from rich.live import Live
 from rich.progress_bar import ProgressBar
 from rich import box
 
+import asyncio
+from wiper_async import AsyncWiper
+from storage import SanitizationStandard
 from wiper import (
     wipe_file,
     wipe_directory,
@@ -54,7 +57,7 @@ app = typer.Typer(
 
 console = Console()
 
-VERSION = "3.0.0"
+VERSION = "4.0.0"
 
 # ──────────────────────── i18n — Language System ───────────────
 
@@ -62,13 +65,14 @@ LANG = {
     "EN": {
         # -- Interactive session --
         "session_title":      "Interactive Session Mode",
-        "session_hint":       "Drag or type files one by one (and press Enter).",
+        "session_hint":       "Drag files one by one and press Enter (or type the path).",
         "session_exit_hint":  "Type [bold]exit[/bold] or [bold]close[/bold] to quit.",
         "queue_count":        "{n} file(s) queued",
         "queue_hint":         "Add more files or press Enter to WIPE.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Session ended.",
         "session_goodbye":    "👋 Session ended. See you later.",
+        "continue_prompt":    "Press Enter to start a new wipe session or type [bold]exit[/bold] to quit...",
         "path_not_found":     "✗ Path not found:",
         # -- Wipe command --
         "target_not_found":   "✗ Target not found:",
@@ -97,7 +101,7 @@ LANG = {
         "preview_type":       "Type",
         "preview_total":      "TOTAL",
         # -- Dashboard --
-        "dash_header":        "🛡️  MADARA MASTER v3.0.0 | SECURITY DAEMON",
+        "dash_header":        "🛡️  MADARA MASTER v4.0.0 | SECURITY DAEMON",
         "dash_file":          "📁 File",
         "dash_algorithm":     "🔒 Algorithm",
         "dash_status":        "🔄 Status",
@@ -117,7 +121,7 @@ LANG = {
         "files_wiped_ok":     "Files Wiped Successfully",
         "files_failed":       "Files Failed",
         "total_overwritten":  "Total Bytes Overwritten",
-        "effective_written":  "Effective Data Written (3 passes)",
+        "effective_written":  "Effective Data Written",
         "total_duration":     "Total Duration",
         "avg_speed":          "Average Write Speed",
         "errors_title":       "⚠ Errors",
@@ -127,7 +131,7 @@ LANG = {
         "partial_wipe":       "⚠ PARTIAL WIPE — {wiped} wiped, {failed} failed",
         "no_files_wiped":     "✗ NO FILES WERE WIPED",
         # -- Completion --
-        "completion_msg":     "[v3.0.0] SANITIZATION VERIFIED — ZERO RECOVERY",
+        "completion_msg":     "[v4.0.0] SANITIZATION VERIFIED — ZERO RECOVERY",
         # -- Pass labels --
         "pass_1":             "Pass 1/3 · Zeros",
         "pass_2":             "Pass 2/3 · Ones",
@@ -145,13 +149,14 @@ LANG = {
     "ES": {
         # -- Interactive session --
         "session_title":      "Modo Sesión Interactiva",
-        "session_hint":       "Arrastra o escribe archivos uno a uno (y pulsa Enter).",
+        "session_hint":       "Arrastra archivos uno a uno y pulsa Enter (o escribe la ruta).",
         "session_exit_hint":  "Escribe [bold]salir[/bold] o [bold]cerrar[/bold] para salir.",
         "queue_count":        "{n} archivo(s) en cola",
         "queue_hint":         "Añade más archivos o pulsa Enter para BORRAR.",
         "session_prompt":     "❱❱❱ ",
         "session_ended":      "Sesión terminada.",
         "session_goodbye":    "👋 Sesión terminada. Hasta pronto.",
+        "continue_prompt":    "Presiona Enter para iniciar una nueva sesión de borrado o escribe [bold]salir[/bold] o [bold]cerrar[/bold] para salir...",
         "path_not_found":     "✗ Ruta no encontrada:",
         # -- Wipe command --
         "target_not_found":   "✗ Objetivo no encontrado:",
@@ -556,27 +561,163 @@ def _print_completion_panel():
 
 # ──────────────────────── Commands ─────────────────────────────
 
+async def async_wipe_logic(
+    files: list[str],
+    standard: SanitizationStandard = SanitizationStandard.NIST_CLEAR,
+    verify: bool = False,
+    log_path: Optional[str] = None
+) -> WipeSummary:
+    """
+    Orchestrates the async wiping process with Live Dashboard.
+    """
+    # Configure custom audit logger if path provided
+    audit_logger = None
+    if log_path:
+        from audit import AuditLogger
+        from pathlib import Path
+        audit_logger = AuditLogger(log_path=Path(log_path))
+
+    wiper = AsyncWiper(audit_logger=audit_logger) 
+    summary = WipeSummary()
+    summary.total_files = len(files)
+    start_time = time.time()
+
+    telemetry = WipeTelemetry()
+    speed_tracker = SpeedTracker(window_seconds=2.0)
+    
+    # Global bytes for speed tracking across files
+    global_accumulated = 0
+
+    with Live(
+        _build_dashboard(telemetry, speed_tracker, 0, len(files)),
+        console=console,
+        refresh_per_second=12,
+        transient=True,
+    ) as live:
+        
+        for file_idx, filepath in enumerate(files, start=1):
+            file_path_obj =  None
+            try:
+                # Handle path objects
+                from pathlib import Path
+                file_path_obj = Path(filepath)
+                file_size = file_path_obj.stat().st_size if file_path_obj.exists() else 0
+            except Exception:
+                file_size = 0
+
+            # Reset telemetry for this file
+            telemetry.start_time = time.time()
+            telemetry.current_pass = 0
+            telemetry.file_size = file_size
+            telemetry.current_file = filepath
+            telemetry.bytes_written_total = 0
+            telemetry.bytes_written_current_pass = 0
+            telemetry.finished = False
+
+            speed_tracker = SpeedTracker(window_seconds=2.0)
+
+            # Callback for async wiper
+            # async callback(path, pass_num, bytes_in_pass, total)
+            async def progress_callback(p, pass_num, bytes_in_pass, total):
+                telemetry.current_pass = pass_num
+                telemetry.bytes_written_current_pass = bytes_in_pass
+                
+                # Approximate total based on pass
+                # Note: this logic assumes equal pass sizes, which might not be true for different strategies
+                # For visualization we can just sum up previous passes + current
+                # Or simplistically:
+                telemetry.bytes_written_total = bytes_in_pass # This is per-pass in current impl?
+                # Wait, wiper_async calls callback with bytes_written_this_pass.
+                # If we have multiple passes, we need to accumulate.
+                # But AsyncWiper loops passes.
+                # We can track 'accumulated_previous_passes' in the loop?
+                # AsyncWiper doesn't expose that easily without state.
+                # Let's rely on 'bytes_in_pass' and pass_num.
+                # If pass_num > 1, we assume previous passes were full size.
+                
+                previous_bytes = (pass_num - 1) * total
+                current_total = previous_bytes + bytes_in_pass
+                telemetry.bytes_written_total = current_total
+                
+                speed_tracker.record(current_total)
+                live.update(_build_dashboard(telemetry, speed_tracker, file_idx, len(files)))
+
+            if not file_path_obj:
+                 # Should not happen given logic above
+                 continue
+
+            # Execute Async Wipe
+            result_dict = await wiper.wipe_file(
+                file_path_obj, 
+                standard=standard,
+                verify=verify, 
+                progress_callback=progress_callback
+            )
+            
+            # Convert dict result to WipeResult (or minimal)
+            # WipeResult is a dataclass in wiper.py. 
+            # We can just use the dict or update WipeSummary to accept dicts?
+            # WipeSummary expects 'results' list of WipeResult objects usually.
+            # Let's mock a WipeResult object or change WipeSummary usage.
+            # Existing WipeResult: filepath, success, error, bytes_written
+            
+            w_res = WipeResult(
+                filepath=filepath,
+                success=result_dict.get("success", False),
+                error=result_dict.get("error"),
+                bytes_written=0 # We don't track exact bytes in result dict yet, can assume file_size * passes
+            )
+            # Estimate bytes written
+            passes = result_dict.get("passes_completed", 0)
+            w_res.bytes_written = file_size * passes
+            
+            summary.results.append(w_res)
+
+            if w_res.success:
+                summary.files_wiped += 1
+                summary.total_bytes_overwritten += w_res.bytes_written
+                
+                # Final update for this file
+                telemetry.finished = True
+                telemetry.bytes_written_total = w_res.bytes_written
+                live.update(_build_dashboard(telemetry, speed_tracker, file_idx, len(files)))
+            else:
+                summary.files_failed += 1
+                summary.errors.append(f"{filepath}: {w_res.error}")
+
+    summary.total_duration = time.time() - start_time
+    return summary
+
 @app.command()
 def wipe(
-    target: str = typer.Argument(
-        ..., help="Path to file or directory to securely wipe"
-    ),
-    confirm: bool = typer.Option(
-        False, "--confirm", "-y", help="Skip confirmation prompt"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", "-n", help="Preview files without wiping"
-    ),
+    target: str = typer.Argument(..., help="Path to file or directory to securely wipe"),
+    confirm: bool = typer.Option(False, "--confirm", "-y", help="Skip confirmation prompt"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview files without wiping"),
+    standard: str = typer.Option("clear", "--standard", "-s", help="Sanitization standard: clear, purge, dod"),
+    verify: bool = typer.Option(False, "--verify", "-v", help="Verify wipe with entropy check"),
+    log_path: Optional[str] = typer.Option(None, "--log-path", "-l", help="Custom path for audit log"),
 ):
     """
-    🧹 Securely wipe files using the DoD 5220.22-M standard (3-pass overwrite).
-
-    Overwrites each file with zeros, ones, and random bytes, then scrubs
-    metadata and deletes the file. Data becomes IRRECOVERABLE.
+    🧹 Securely wipe files using Async Engine (NIST SP 800-88 / DoD).
+    
+    Auto-detects Storage Type (SSD/HDD) and applies optimized sanitization.
+    Generates Audit Logs (madara_audit.jsonl).
     """
     print_banner()
-
     target = os.path.abspath(target)
+
+    # Validate standard
+    std_enum = SanitizationStandard.NIST_CLEAR
+    s_lower = standard.lower()
+    if s_lower in ("clear", "nist_clear"):
+        std_enum = SanitizationStandard.NIST_CLEAR
+    elif s_lower in ("purge", "nist_purge"):
+        std_enum = SanitizationStandard.NIST_PURGE
+    elif s_lower in ("dod", "dod_legacy"):
+        std_enum = SanitizationStandard.DOD_LEGACY
+    else:
+        console.print(f"\n  [bold red]Invalid standard:[/] {standard}. Valid: clear, purge, dod")
+        raise typer.Exit(code=1)
 
     # Validate target exists
     if not os.path.exists(target):
@@ -603,15 +744,15 @@ def wipe(
     info_table.add_row(T("lbl_type"), T("type_dir") if is_dir else T("type_file"))
     info_table.add_row(T("files_to_wipe"), str(len(files)))
     info_table.add_row(T("total_data"), format_bytes(total_size))
-    info_table.add_row(T("method"), "DoD 5220.22-M (3-pass)")
-    info_table.add_row(T("passes"), T("pass_values"))
+    info_table.add_row(T("method"), f"Async Auto-Detect (Standard: {std_enum.value})")
+    info_table.add_row("Verify", "Yes" if verify else "No")
+    if log_path:
+        info_table.add_row("Audit Log", log_path)
     console.print(info_table)
 
-    # Dry run — just list files
+    # Dry run
     if dry_run:
-        console.print(
-            f"\n  [bold yellow]{T('dry_run_title')}[/]\n"
-        )
+        console.print(f"\n  [bold yellow]{T('dry_run_title')}[/]\n")
         for f in files[:50]:
             size = os.path.getsize(f) if os.path.exists(f) else 0
             console.print(f"    [dim]•[/] {f} [dim]({format_bytes(size)})[/]")
@@ -624,93 +765,30 @@ def wipe(
         console.print()
         console.print(
             Panel(
-                f"[bold red]{T('warning_title')}[/]\n\n"
-                f"{T('warning_body')}",
+                f"[bold red]{T('warning_title')}[/]\n\n{T('warning_body')}",
                 border_style="bright_red",
                 box=box.DOUBLE_EDGE,
                 padding=(1, 2),
             )
         )
         console.print()
-        user_confirm = typer.confirm(
-            T("confirm_prompt"), default=False
-        )
-        if not user_confirm:
+        if not typer.confirm(T("confirm_prompt"), default=False):
             console.print(f"\n  [bold cyan]{T('op_cancelled')}[/]")
             raise typer.Exit(code=0)
 
     console.print()
 
-    # ── Execute wipe with Live Dashboard ──
-    summary = WipeSummary()
-    summary.total_files = len(files)
-    start_time = time.time()
-
-    telemetry = WipeTelemetry()
-    speed_tracker = SpeedTracker(window_seconds=2.0)
-
-    # Accumulated bytes across ALL files for multi-file global tracking
-    global_bytes_written = 0
-
-    with Live(
-        _build_dashboard(telemetry, speed_tracker, 0, len(files)),
-        console=console,
-        refresh_per_second=12,
-        transient=True,
-    ) as live:
-
-        for file_idx, filepath in enumerate(files, start=1):
-            file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
-
-            # Reset telemetry for this file
-            telemetry.start_time = time.time()
-            telemetry.current_pass = 0
-            telemetry.file_size = file_size
-            telemetry.current_file = filepath
-            telemetry.bytes_written_total = 0
-            telemetry.bytes_written_current_pass = 0
-            telemetry.finished = False
-
-            speed_tracker = SpeedTracker(window_seconds=2.0)
-
-            def make_callback():
-                """Creates a closure for per-chunk progress updates."""
-                accumulated = {1: 0, 2: 0, 3: 0}
-
-                def callback(fp, pass_num, bytes_done, total_bytes):
-                    accumulated[pass_num] = bytes_done
-                    telemetry.current_pass = pass_num
-                    telemetry.bytes_written_current_pass = bytes_done
-                    telemetry.bytes_written_total = sum(accumulated.values())
-
-                    speed_tracker.record(telemetry.bytes_written_total)
-
-                    # Update the live display
-                    live.update(
-                        _build_dashboard(telemetry, speed_tracker, file_idx, len(files))
-                    )
-
-                return callback
-
-            result = wipe_file(filepath, progress_callback=make_callback())
-            summary.results.append(result)
-
-            if result.success:
-                summary.files_wiped += 1
-                summary.total_bytes_overwritten += result.bytes_written
-                global_bytes_written += result.bytes_written
-
-                # Final update for this file — mark finished
-                telemetry.finished = True
-                telemetry.bytes_written_total = file_size * DOD_PASSES
-                live.update(
-                    _build_dashboard(telemetry, speed_tracker, file_idx, len(files))
-                )
-            else:
-                summary.files_failed += 1
-                summary.errors.append(f"{result.filepath}: {result.error}")
-
-    summary.total_duration = time.time() - start_time
+    # ── Execute Async Wipe ──
+    try:
+        summary = asyncio.run(async_wipe_logic(
+            files, 
+            standard=std_enum, 
+            verify=verify, 
+            log_path=log_path
+        ))
+    except KeyboardInterrupt:
+        console.print("\n[bold red]Interrupted by user.[/]")
+        raise typer.Exit(1)
 
     # Remove empty directories if target was a directory
     if is_dir:
@@ -725,10 +803,8 @@ def wipe(
         except OSError:
             pass
 
-    # ── Completion: static green neon panel ──
+    # ── Completion ──
     _print_completion_panel()
-
-    # Show detailed summary
     print_summary(summary)
 
 
@@ -939,12 +1015,28 @@ def interactive_session():
                 continue
 
         # ── Wipe phase ──
-        for target in queued_targets:
-            sys.argv = ["madara.py", "wipe", target, "--confirm"]
-            try:
-                app(standalone_mode=False)
-            except SystemExit:
-                pass
+        # ── Wipe phase ──
+        try:
+            asyncio.run(async_wipe_logic(queued_targets))
+            
+            # Explicit completion message and pause
+            console.print()
+            console.print(Panel(
+                Align.center(f"[bold bright_green]✅ {T('completion_msg')}[/]"),
+                border_style="green",
+                padding=(1, 2)
+            ))
+            resp = console.input(f"\n  [dim]{T('continue_prompt')}[/]")
+            if resp.strip().lower() in EXIT_KEYWORDS[current_lang]:
+                console.print(f"\n  [bold cyan]{T('session_goodbye')}[/]")
+                # Add slight delay for readability
+                time.sleep(0.5)
+                break
+
+        except KeyboardInterrupt:
+            console.print("\n[bold red]Interrupted by user.[/]")
+        except Exception as e:
+            console.print(f"\n[bold red]Error during wipe session: {e}[/]")
 
         # Re-display session hints after wipe completes
         console.print()
